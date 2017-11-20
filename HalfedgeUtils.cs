@@ -5,7 +5,6 @@ using UnityEngine;
 namespace HalfedgeDS
 {
     using Smooth;
-    
     public class HalfedgeUtils
     {
         /// <summary>
@@ -170,7 +169,8 @@ namespace HalfedgeDS
                 int heh = m.GetHalfedgeVertexH(vh), prev_heh;
                 if (heh.isValidHandle())
                 {
-                    Debug.Assert(m.IsBoundaryEdge(m.GetEdgeH(heh)));
+                    //Debug.Assert(m.IsBoundaryEdge(m.GetEdgeH(heh)));
+
                     prev_heh = m.GetPrevHalfedgeH(heh);
 
                     int to_vh = m.GetEndVertexH(heh),
@@ -194,6 +194,7 @@ namespace HalfedgeDS
                     valence++;
                     p += m.GetPoint(vvh);
                 }
+                
                 var w = SmoothUtils.loopWeights[valence];
                 p *= w.second;
                 p += m.GetPoint(vh) * w.first;

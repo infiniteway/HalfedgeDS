@@ -1,6 +1,4 @@
-﻿//#define PREV_HALFEDGE_EXCULDE
-
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Reflection.Emit;
@@ -13,37 +11,20 @@ namespace HalfedgeDS
         public static bool isValidHandle(this int handle) { return (handle >= 0); }
     }
 
-    public static class ListExtensions
+    public class BaseHandle
     {
-        static class ArrayAccessor<T>
-        {
-            public static Func<List<T>, T[]> Getter;
-
-            static ArrayAccessor()
-            {
-                var dm = new DynamicMethod("get", MethodAttributes.Static | MethodAttributes.Public, 
-                    CallingConventions.Standard, typeof(T[]), 
-                    new Type[] { typeof(List<T>) }, typeof(ArrayAccessor<T>), true);
-                var il = dm.GetILGenerator();
-                il.Emit(OpCodes.Ldarg_0); // Load List<T> argument
-                il.Emit(OpCodes.Ldfld, typeof(List<T>).GetField("_items", BindingFlags.NonPublic | BindingFlags.Instance)); // Replace argument by field
-                il.Emit(OpCodes.Ret); // Return field
-                Getter = (Func<List<T>, T[]>)dm.CreateDelegate(typeof(Func<List<T>, T[]>));
-            }
-        }
-
-        public static T[] GetInternalArray<T>(this List<T> list)
-        {
-            return ArrayAccessor<T>.Getter(list);
-        }
+        int idx = -1;
     }
+
+    public class HalfedgeH : BaseHandle { }
+    public class EdgeH : BaseHandle { }
+    public class VertexH : BaseHandle { }
+    public class FaceH : BaseHandle { }
 
     internal class Halfedge
     {
         public int next = -1;       // next half-edge handle
-#if !PREV_HALFEDGE_EXCULDE
         public int prev = -1;       // prev half-edge handle
-#endif
         public int fh = -1;         // adjacent face handle
         public int vh = -1;         // start/pointing vertex handle of this half-edge 
     }
@@ -68,6 +49,7 @@ namespace HalfedgeDS
     {
         protected PropertyContainer m_vprops = new PropertyContainer();
         protected PropertyContainer m_eprops = new PropertyContainer();
+        protected PropertyContainer m_hprops = new PropertyContainer();
         protected PropertyContainer m_fprops = new PropertyContainer();
 
         public virtual int vertexCount { get { return 0; } private set { } }
@@ -76,32 +58,31 @@ namespace HalfedgeDS
         public virtual int faceCount { get { return 0; } private set { } }
 
         protected void ResizeVProps(int n) { m_vprops.Resize(n); }
-        protected void ResizeEProps(int n) { m_eprops.Resize(n); }
+        protected void ResizeEProps(int n) { m_eprops.Resize(n); ResizeHProps(n * 2); }
+        protected void ResizeHProps(int n) { m_hprops.Resize(n); }
         protected void ResizeFProps(int n) { m_fprops.Resize(n); }
 
-        protected void RserveVProps(int n) { m_vprops.Reserve(n); }
-        protected void RserveEProps(int n) { m_eprops.Reserve(n); }
+        protected void ReserveVProps(int n) { m_vprops.Reserve(n); }
+        protected void ReserveEProps(int n) { m_eprops.Reserve(n); ReserveHProps(n * 2); }
+        protected void ReserveHProps(int n) { m_hprops.Reserve(n); }
         protected void ReserveFProps(int n) { m_fprops.Reserve(n); }
 
         protected const int InvalidHandle = -1;
-
-        public void Dispose()
-        {
-            Clean();
-        }
 
         public virtual void Clear()
         {
             m_vprops.Clear();
             m_eprops.Clear();
+            m_hprops.Clear();
             m_fprops.Clear();
         }
 
-        public virtual void Clean()
+        public virtual void Dispose()
         {
-            m_vprops.Clean();
-            m_eprops.Clean();
-            m_fprops.Clean();
+            m_vprops.Dispose();
+            m_eprops.Dispose();
+            m_hprops.Dispose();
+            m_fprops.Dispose();
         }
 
         /// <summary>
@@ -124,6 +105,17 @@ namespace HalfedgeDS
         {
             m_eprops.AddProperty(ph);
             m_eprops.Resize(edgeCount);
+        }
+
+        /// <summary>
+        /// Add Half edge property for the given property handle
+        /// </summary>
+        /// <typeparam name="T"></typeparam>
+        /// <param name="ph">Half edg Property Handle</param>
+        public void AddProperty<T>(HPropH<T> ph) where T : new()
+        {
+            m_hprops.AddProperty(ph);
+            m_hprops.Resize(edgeCount * 2);
         }
 
         /// <summary>
@@ -155,6 +147,11 @@ namespace HalfedgeDS
         public void RemoveProperty<T>(EPropH<T> ph)
         {
             m_eprops.RemoveProperty(ph);
+        }
+
+        public void RemoveProperty<T>(HPropH<T> ph)
+        {
+            m_hprops.RemoveProperty(ph);
         }
 
         /// <summary>
@@ -225,6 +222,21 @@ namespace HalfedgeDS
             m_eprops.GetProperty(ph)[eh] = p;
         }
 
+        public Property<T> GetProperty<T>(HPropH<T> ph) where T : new()
+        {
+            return m_hprops.GetProperty(ph);
+        }
+
+        public T GetProperty<T>(HPropH<T> ph, int heh) where T : new()
+        {
+            return m_hprops.GetProperty(ph)[heh];
+        }
+
+        public void SetProperty<T>(HPropH<T> ph, int heh, T p) where T : new()
+        {
+            m_hprops.GetProperty(ph)[heh] = p;
+        }
+
         public Property<T> GetProperty<T>(FPropH<T> ph) where T : new()
         {
             return m_fprops.GetProperty(ph);
@@ -257,9 +269,9 @@ namespace HalfedgeDS
 
     public class ArrayKernel : BaseKernel
     {
-        private List<Vertex> m_vertices = new List<Vertex>();
-        private List<Edge> m_edges = new List<Edge>();
-        private List<Face> m_faces = new List<Face>();
+        private SectionList<Vertex> m_vertices = new SectionList<Vertex>();
+        private SectionList<Edge> m_edges = new SectionList<Edge>();
+        private SectionList<Face> m_faces = new SectionList<Face>();
 
         public override int vertexCount { get { return m_vertices.Count; } }
         public override int edgeCount { get { return m_edges.Count; } }
@@ -273,13 +285,12 @@ namespace HalfedgeDS
             m_faces.Clear();
         }
 
-        public override void Clean()
+        public override void Dispose()
         {
-            m_vertices.Clear();
-            m_edges.Clear();
-            m_faces.Clear();
-
-            base.Clean();
+            m_vertices.Dispose();
+            m_edges.Dispose();
+            m_faces.Dispose();
+            base.Dispose();
         }
 
         public void ReserveVertex(int cap)
@@ -287,6 +298,7 @@ namespace HalfedgeDS
             if (cap < m_vertices.Capacity)
                 return;
             m_vertices.Capacity = cap;
+            ReserveVProps(m_vertices.Capacity);
         }
 
         public void ReserveEdge(int cap)
@@ -294,6 +306,7 @@ namespace HalfedgeDS
             if (cap < m_edges.Capacity)
                 return;
             m_edges.Capacity = cap;
+            ReserveEProps(m_edges.Capacity);
         }
 
         public void ReserveFace(int cap)
@@ -301,6 +314,7 @@ namespace HalfedgeDS
             if (cap < m_faces.Capacity)
                 return;
             m_faces.Capacity = cap;
+            ReserveFProps(m_faces.Capacity);
         }
 
         public void Reserve(int vCount, int eCount, int fCount)
@@ -310,6 +324,56 @@ namespace HalfedgeDS
             ReserveFace(fCount);
         }
 
+        public void ResizeVertex(int size)
+        {
+            if (size > m_vertices.Count)
+            {
+                int add = size - m_vertices.Count;
+                for (int i = 0; i < add; ++i)
+                {
+                    var def = default(Vertex);
+                    m_vertices.Add(def == null ? new Vertex() : def);
+                }
+            }
+        
+            ResizeVProps(m_vertices.Count);
+        }
+
+        public void ResizeEdge(int size)
+        {
+            if (size > m_edges.Count)
+            {
+                int add = size - m_edges.Count;
+                for (int i = 0; i < add; ++i)
+                {
+                    var def = default(Edge);
+                    m_edges.Add(def == null ? new Edge() : def);
+                }
+            }
+            ResizeEProps(m_edges.Count);
+        }
+
+        public void ResizeFace(int size)
+        {
+            if (size > m_faces.Count)
+            {
+                int add = size - m_faces.Count;
+                for (int i = 0; i < add; ++i)
+                {
+                    var def = default(Face);
+                    m_faces.Add(def == null ? new Face() : def);
+                }
+            }
+            ResizeFProps(m_faces.Count);
+        }
+
+        public void Resize(int vCount, int eCount, int fCount)
+        {
+            ResizeVertex(vCount);
+            ResizeEdge(eCount);
+            ResizeFace(fCount);
+        }
+
         /// <summary>
         /// Get Vertex from Vertex Handle
         /// </summary>
@@ -317,7 +381,7 @@ namespace HalfedgeDS
         /// <returns>Half-edge data structure's vertex</returns>
         private Vertex GetVertex(int vh)
         {
-            Debug.Assert(vh >= 0 && vh < m_vertices.Count, "Vertex Count vs Handle: " + m_vertices.Count + " - " + vh);
+            //Debug.Assert(vh >= 0 && vh < m_vertices.Count, "Vertex Count vs Handle: " + m_vertices.Count + " - " + vh);
             return m_vertices[vh];
         }
 
@@ -328,7 +392,7 @@ namespace HalfedgeDS
         /// <returns>Half-edge data structure's edge</returns>
         private Edge GetEdge(int eh)
         {
-            Debug.Assert(eh >= 0 && eh < m_edges.Count, "Edge Count vs Handle: " + m_edges.Count + " - " + eh);
+            //Debug.Assert(eh >= 0 && eh < m_edges.Count, "Edge Count vs Handle: " + m_edges.Count + " - " + eh);
             return m_edges[eh];
         }
 
@@ -339,7 +403,7 @@ namespace HalfedgeDS
         /// <returns>Half-edge data structure's face</returns>
         private Face GetFace(int fh)
         {
-            Debug.Assert(fh >= 0 || fh < m_faces.Count, "Face Count vs Handle: " + m_faces.Count + " - " + fh);
+            //Debug.Assert(fh >= 0 || fh < m_faces.Count, "Face Count vs Handle: " + m_faces.Count + " - " + fh);
             return m_faces[fh];
         }
 
@@ -350,7 +414,7 @@ namespace HalfedgeDS
         /// <returns></returns>
         private Halfedge GetHalfedge(int heh)
         {
-            Debug.Assert(heh >= 0 && heh < m_edges.Count * 2, "Halfedge Count vs Handle: " + m_edges.Count * 2 + " - " + heh);
+            //Debug.Assert(heh >= 0 && heh < m_edges.Count * 2, "Halfedge Count vs Handle: " + m_edges.Count * 2 + " - " + heh);
             return m_edges[heh >> 1].halfedges[heh & 1];
         }
 
@@ -376,7 +440,6 @@ namespace HalfedgeDS
             var edge = new Edge();
             m_edges.Add(edge);
             ResizeEProps(edgeCount);
-
             edge.halfedges[0].vh = endVh;
             edge.halfedges[1].vh = startVh;
             return (m_edges.Count - 1) * 2;
@@ -418,36 +481,7 @@ namespace HalfedgeDS
         public int GetEndVertexH(int heh) { return GetHalfedge(heh).vh; }
         public int GetEdgeH(int heh) { return (heh >> 1); }
         public int GetNextHalfedgeH(int heh) { return GetHalfedge(heh).next; }
-
-#if !PREV_HALFEDGE_EXCULDE
         public int GetPrevHalfedgeH(int heh) { return GetHalfedge(heh).prev; }
-#else
-        public int GetPrevHalfedgeH(int heh)
-        {
-            if (IsBoundaryHalfedge(heh))
-            {
-                int curr_heh = GetOppositeHalfedgeH(heh);
-                int next_heh = GetNextHalfedgeH(curr_heh);
-                do
-                {
-                    curr_heh = GetOppositeHalfedgeH(next_heh);
-                    next_heh = GetNextHalfedgeH(curr_heh);
-                } while (next_heh != heh);
-                return curr_heh;
-            }
-            else
-            {
-                int curr_heh = heh;
-                int next_heh = GetNextHalfedgeH(heh);
-                while (next_heh != heh)
-                {
-                    curr_heh = next_heh;
-                    next_heh = GetNextHalfedgeH(next_heh);
-                }
-                return curr_heh;
-            }
-        }
-#endif
         public int GetOppositeHalfedgeH(int heh) { return (heh ^ 1); }
         public int GetFaceH(int heh) { return GetHalfedge(heh).fh; }
         public int GetOppositeFaceH(int heh) { return GetFaceH(GetOppositeHalfedgeH(heh)); }
@@ -461,11 +495,7 @@ namespace HalfedgeDS
         public void SetVertexH(int heh, int vh) { GetHalfedge(heh).vh = vh; }
         public void SetFaceH(int heh, int fh) { GetHalfedge(heh).fh = fh; }
         public void SetNextHalfedgeH(int heh, int next_heh) { GetHalfedge(heh).next = next_heh; SetPrevHalfedgeH(next_heh, heh); }
-#if !PREV_HALFEDGE_EXCULDE
         public void SetPrevHalfedgeH(int heh, int prev_heh) { GetHalfedge(heh).prev = prev_heh; }
-#else
-        public void SetPrevHalfedgeH(int heh, int prev_heh) { }
-#endif
         public void SetHalfedgeFaceH(int fh, int heh) { GetFace(fh).heh = heh; }
         public void SetHalfedgeVertexH(int vh, int heh) { GetVertex(vh).heh = heh; }
 #endregion

@@ -34,6 +34,8 @@ namespace HalfedgeDS
         EdgeInfo[] m_edgeData = new EdgeInfo[3];
         NextPair[] m_nextCache = new NextPair[3 * 6];
         int[] m_vertexIdxCache = new int[3];
+        const int maxIterCount = 32;
+        const string iterErrorMsg = "Error: connectivity corrupted: ";
         #endregion
         public PolyConnectivity()
         {
@@ -63,7 +65,7 @@ namespace HalfedgeDS
         /// <returns>Array of added faces' handle</returns>
         public void AddFaces(int[] faces, int stride = 3)
         {
-            Debug.Assert(stride >= 3);
+            //Debug.Assert(stride >= 3);
             if (m_vertexIdxCache.Length < stride)
                 m_vertexIdxCache = new int[stride];
 
@@ -144,18 +146,18 @@ namespace HalfedgeDS
                         if (boundary_prev == inner_prev)
                             return InvalidHandle;
 
-                        Debug.Assert(IsBoundaryHalfedge(boundary_prev));
-                        Debug.Assert(IsBoundaryHalfedge(boundary_next));
+                        //Debug.Assert(IsBoundaryHalfedge(boundary_prev));
+                        //Debug.Assert(IsBoundaryHalfedge(boundary_next));
 
                         patch_start = GetNextHalfedgeH(inner_prev);
                         patch_end = GetPrevHalfedgeH(inner_next);
 
-                        Debug.Assert(boundary_prev.isValidHandle());
-                        Debug.Assert(patch_start.isValidHandle());
-                        Debug.Assert(patch_end.isValidHandle());
-                        Debug.Assert(boundary_next.isValidHandle());
-                        Debug.Assert(inner_prev.isValidHandle());
-                        Debug.Assert(inner_next.isValidHandle());
+                        //Debug.Assert(boundary_prev.isValidHandle());
+                        //Debug.Assert(patch_start.isValidHandle());
+                        //Debug.Assert(patch_end.isValidHandle());
+                        //Debug.Assert(boundary_next.isValidHandle());
+                        //Debug.Assert(inner_prev.isValidHandle());
+                        //Debug.Assert(inner_next.isValidHandle());
 
                         m_nextCache[nextCacheCount].heh0 = boundary_prev;
                         m_nextCache[nextCacheCount].heh1 = patch_start;
@@ -187,8 +189,8 @@ namespace HalfedgeDS
                 inner_prev = m_edgeData[i].heh;
                 inner_next = m_edgeData[ii].heh;
 
-                Debug.Assert(inner_prev.isValidHandle());
-                Debug.Assert(inner_next.isValidHandle());
+                //Debug.Assert(inner_prev.isValidHandle());
+                //Debug.Assert(inner_next.isValidHandle());
 
                 int id = 0;
                 if (m_edgeData[i].is_new) id |= 1;
@@ -199,15 +201,17 @@ namespace HalfedgeDS
                     outer_prev = GetOppositeHalfedgeH(inner_next);
                     outer_next = GetOppositeHalfedgeH(inner_prev);
 
-                    Debug.Assert(outer_prev.isValidHandle());
-                    Debug.Assert(outer_next.isValidHandle());
+                    //Debug.Assert(outer_prev.isValidHandle());
+                    //Debug.Assert(outer_next.isValidHandle());
 
                     // set outer links
                     switch (id)
                     {
                         case 1: // prev is new, next is old
                             boundary_prev = GetPrevHalfedgeH(inner_next);
-                            Debug.Assert(boundary_prev.isValidHandle());
+
+                            //Debug.Assert(boundary_prev.isValidHandle());
+
                             m_nextCache[nextCacheCount].heh0 = boundary_prev;
                             m_nextCache[nextCacheCount].heh1 = outer_next;
                             nextCacheCount++;
@@ -216,7 +220,9 @@ namespace HalfedgeDS
 
                         case 2: // next is new, prev is old
                             boundary_next = GetNextHalfedgeH(inner_prev);
-                            Debug.Assert(boundary_next.isValidHandle());
+
+                            //Debug.Assert(boundary_next.isValidHandle());
+
                             m_nextCache[nextCacheCount].heh0 = outer_prev;
                             m_nextCache[nextCacheCount].heh1 = boundary_next;
                             nextCacheCount++;
@@ -235,8 +241,10 @@ namespace HalfedgeDS
                             {
                                 boundary_next = GetHalfedgeVertexH(vh);
                                 boundary_prev = GetPrevHalfedgeH(boundary_next);
-                                Debug.Assert(boundary_prev.isValidHandle());
-                                Debug.Assert(boundary_next.isValidHandle());
+
+                                //Debug.Assert(boundary_prev.isValidHandle());
+                                //Debug.Assert(boundary_next.isValidHandle());
+
                                 m_nextCache[nextCacheCount].heh0 = boundary_prev;
                                 m_nextCache[nextCacheCount].heh1 = outer_next;
                                 nextCacheCount++;
@@ -284,8 +292,15 @@ namespace HalfedgeDS
         {
             int heh = GetHalfedgeVertexH(vh);
             int theh = heh;
+            int iterCount = 0;
             do
             {
+                if (iterCount >= maxIterCount)
+                {
+                    UnityEngine.Debug.LogError(iterErrorMsg + heh);
+                    yield break;
+                }
+                iterCount++;
                 if (theh < 0 || theh > edgeCount * 2) { yield break; }
                 yield return theh;
                 theh = GetNextHalfedgeH(GetOppositeHalfedgeH(theh));
@@ -300,8 +315,15 @@ namespace HalfedgeDS
         public IEnumerable<int> GetHalfedgeCirculator(int heh)
         {
             int theh = heh;
+            int iterCount = 0;
             do
             {
+                if (iterCount >= maxIterCount)
+                {
+                    UnityEngine.Debug.LogError(iterErrorMsg + heh);
+                    yield break;
+                }
+                iterCount++;
                 if (theh < 0 || theh > edgeCount * 2) { yield break; }
                 yield return theh;
                 theh = GetOppositeHalfedgeH(GetNextHalfedgeH(theh));
@@ -313,11 +335,37 @@ namespace HalfedgeDS
         /// </summary>
         /// <param name="heh">Half-edge Handle</param>
         /// <returns>An enumerable of Half-edge handles incident to the adjacent face</returns>
-        public IEnumerable<int> GetFaceCirculator(int heh)
+        public IEnumerable<int> GetFaceCirculator(int fh)
         {
+            int heh = GetHalfedgeFaceH(fh);
             int theh = heh;
+            int iterCount = 0;
             do
             {
+                if (iterCount >= maxIterCount)
+                {
+                    UnityEngine.Debug.LogError(iterErrorMsg + heh);
+                    yield break;
+                }
+                iterCount++;
+                if (theh < 0 || theh > edgeCount * 2) { yield break; }
+                yield return theh;
+                theh = GetNextHalfedgeH(theh);
+            } while (theh != heh);
+        }
+
+        public IEnumerable<int> GetFaceHalfedgeCirculator(int heh)
+        {
+            int theh = heh;
+            int iterCount = 0;
+            do
+            {
+                if (iterCount >= maxIterCount)
+                {
+                    UnityEngine.Debug.LogError(iterErrorMsg + heh);
+                    yield break;
+                }
+                iterCount++;
                 if (theh < 0 || theh > edgeCount * 2) { yield break; }
                 yield return theh;
                 theh = GetNextHalfedgeH(theh);
@@ -333,12 +381,24 @@ namespace HalfedgeDS
         {
             int heh = GetHalfedgeFaceH(fh);
             int theh = heh;
+            int iterCount = 0;
             do
             {
+                if (iterCount >= maxIterCount)
+                {
+                    UnityEngine.Debug.LogError(iterErrorMsg + heh);
+                    yield break;
+                }
+                iterCount++;
                 if (theh < 0 || theh > edgeCount * 2) { yield break; }
                 yield return GetEndVertexH(theh);
                 theh = GetNextHalfedgeH(theh);
             } while (theh != heh);
+        }
+
+        public int[] GetFaceVertices(int fh)
+        {
+            return GetFaceVertexIter(fh).Select(vh => vh).ToArray();
         }
 
         /// <summary>
@@ -348,7 +408,12 @@ namespace HalfedgeDS
         /// <returns>An enumerable of half-edge handles</returns>
         public IEnumerable<int> GetFaceHalfedgeIter(int fh)
         {
-            return GetFaceCirculator(GetHalfedgeFaceH(fh));
+            return GetFaceCirculator(fh);
+        }
+
+        public int[] GetFaceHalfedges(int fh)
+        {
+            return GetFaceHalfedgeIter(fh).Select(he => he).ToArray();
         }
 
         /// <summary>
@@ -360,12 +425,24 @@ namespace HalfedgeDS
         {
             int heh = GetHalfedgeVertexH(vh);
             int theh = heh;
+            int iterCount = 0;
             do
             {
+                if (iterCount >= maxIterCount)
+                {
+                    UnityEngine.Debug.LogError(iterErrorMsg + heh);
+                    yield break;
+                }
+                iterCount++;
                 if (theh < 0 || theh > edgeCount * 2) { yield break; }
                 yield return GetEndVertexH(theh);
                 theh = GetNextHalfedgeH(GetOppositeHalfedgeH(theh));
             } while (theh != heh);
+        }
+
+        public int[] GetVertexVertices(int vh)
+        {
+            return GetVertexVertexIter(vh).Select(tvh => tvh).ToArray();
         }
 
         /// <summary>
@@ -378,6 +455,11 @@ namespace HalfedgeDS
             return GetVertexCirculartor(vh);
         }
 
+        public int[] GetVertexOHalfedges(int vh)
+        {
+            return GetVertexCirculartor(vh).Select(he => he).ToArray();
+        }
+
         /// <summary>
         /// Get the incoming half-edges of the given vertex ordered in CW
         /// </summary>
@@ -386,6 +468,36 @@ namespace HalfedgeDS
         public IEnumerable<int> GetVertexIHalfedgeIter(int vh)
         {
             return GetHalfedgeCirculator(GetOppositeHalfedgeH(GetHalfedgeVertexH(vh)));
+        }
+
+        public int[] GetVertexIHalfedges(int vh)
+        {
+            return GetHalfedgeCirculator(GetOppositeHalfedgeH(GetHalfedgeVertexH(vh))).Select(he => he).ToArray();
+        }
+
+        public IEnumerable<int> GetVertexFaceIter(int vh)
+        {
+            int heh = GetHalfedgeVertexH(vh);
+            int theh = heh;
+            int iterCount = 0;
+            do
+            {
+                if (iterCount >= maxIterCount)
+                {
+                    UnityEngine.Debug.Log(iterErrorMsg + heh);
+                    yield break;
+                }
+                iterCount++;
+                if (theh < 0 || theh > edgeCount * 2) { yield break; }                
+                var fh = GetFaceH(theh);
+                if (fh.isValidHandle()) yield return fh;
+                theh = GetNextHalfedgeH(GetOppositeHalfedgeH(theh));
+            } while (theh != heh);
+        }
+
+        public int[] GetVertexFaces(int vh)
+        {
+            return GetVertexFaceIter(vh).Select(fh => fh).ToArray();
         }
 
         public void AdjustOutgoingHalfedge(int vh)

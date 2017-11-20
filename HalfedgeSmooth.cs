@@ -1,7 +1,6 @@
 ﻿using System;
 using System.Collections;
 using System.Collections.Generic;
-using UnityEngine;
 
 namespace HalfedgeDS.Smooth
 {
@@ -29,7 +28,7 @@ namespace HalfedgeDS.Smooth
                 if (++valence > 0)
                 {
                     double inv_v = 1.0 / (double)valence;
-                    double t = (3.0 + 2.0 * Mathf.Cos((float)(2.0 * Mathf.PI * inv_v)));
+                    double t = (3.0 + 2.0 * Math.Cos((float)(2.0 * Math.PI * inv_v)));
                     double alpha = (40.0 - t * t) / 64.0;
                     yield return new Weight { first = (float)(1.0 - alpha), second = (float)(inv_v * alpha) };
                 }
@@ -50,7 +49,7 @@ namespace HalfedgeDS.Smooth
             get { return m_weights[d]; }
         }
 
-        public Weights(int maxValence = 10)
+        public Weights(int maxValence = 20)
         {
             Precompute(maxValence);
         }
